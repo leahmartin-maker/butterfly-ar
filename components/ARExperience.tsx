@@ -8,7 +8,15 @@ import ButterflyModel from '@/components/ButterflyModel';
 import { Suspense, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
-const store = createXRStore();
+// Configure store with image tracking BEFORE session starts
+const store = createXRStore({
+  imageTracking: [
+    {
+      image: '/images/butterfly-painting.png',
+      width: 0.2, // 20cm - my painting's physical width in meters
+    }
+  ]
+} as any);
 
 function ImageTrackingListener({ onImageDetected }: { onImageDetected: (pos: THREE.Vector3) => void }) {
   // Listen for XR frame updates to check for tracked images
@@ -78,41 +86,13 @@ export default function ARExperience() {
 
   const handleEnterAR = async () => {
     try {
-      // Load the painting image for tracking
-      const image = document.createElement('img');
-      image.src = '/images/butterfly-painting.png';
-      await image.decode();
-
-      console.log('Image loaded, dimensions:', image.width, 'x', image.height);
-
-      // Create ImageBitmap for WebXR
-      const imageBitmap = await createImageBitmap(image);
-      
       console.log('Entering AR with image tracking...');
-
-      // Enter AR with image tracking configuration
-      await store.enterAR({
-        optionalFeatures: ['image-tracking'],
-        trackedImages: [{
-          image: imageBitmap,
-          widthInMeters: 0.2 // 20cm wide (your painting's physical width)
-        }]
-      } as any);
-
+      await store.enterAR();
       setInAR(true);
-      console.log('AR session started with image tracking');
+      console.log('AR session started - point camera at your butterfly painting');
     } catch (error) {
-      console.error('Failed to enter AR with image tracking:', error);
-      
-      // Fallback: try without image tracking
-      try {
-        await store.enterAR();
-        setInAR(true);
-        setSupportError('Image tracking not supported. AR mode active without tracking.');
-      } catch (fallbackError) {
-        console.error('Failed to enter AR at all:', fallbackError);
-        setSupportError('Failed to start AR session.');
-      }
+      console.error('Failed to enter AR:', error);
+      setSupportError('Failed to start AR session.');
     }
   };
 
@@ -144,7 +124,7 @@ export default function ARExperience() {
         </div>
       )}
 
-      {/* Detection status indicator */}
+      {/* Detection status */}
       {inAR && !hasSpawned && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-md text-sm z-10 animate-pulse">
           🔍 Point camera at your butterfly painting...
