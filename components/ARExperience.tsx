@@ -53,12 +53,21 @@ export default function ARExperience() {
               await image.decode();
               
               // Enter AR with image tracking
-              await store.enterAR();
+              await store.enterAR({
+                requiredFeatures: ['local-floor'],
+                optionalFeatures: ['image-tracking'],
+                trackedImages: [{
+                  image,
+                  widthInMeters: 0.3 // Adjust to your painting's actual width
+                }]
+              });
               setInAR(true);
             } catch (error) {
               console.error('Failed to enter AR:', error);
               // Fallback to regular AR without image tracking
-              await store.enterAR();
+              await store.enterAR({
+                requiredFeatures: ['local-floor']
+              });
               setInAR(true);
             }
           }}
