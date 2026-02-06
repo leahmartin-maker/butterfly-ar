@@ -8,15 +8,7 @@ import ButterflyModel from '@/components/ButterflyModel';
 import { Suspense, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
-// Configure store with image tracking BEFORE session starts
-const store = createXRStore({
-  imageTracking: [
-    {
-      image: '/images/butterfly-painting.png',
-      width: 0.2, // 20cm wide (your painting's physical width)
-    }
-  ]
-});
+const store = createXRStore();
 
 function ImageTrackingListener({ onImageDetected }: { onImageDetected: (pos: THREE.Vector3) => void }) {
   // Listen for XR frame updates to check for tracked images
@@ -91,10 +83,21 @@ export default function ARExperience() {
       image.src = '/images/butterfly-painting.png';
       await image.decode();
 
-      console.log('Image loaded, entering AR with image tracking...');
+      console.log('Image loaded, dimensions:', image.width, 'x', image.height);
 
-      // Enter AR (configuration should be done in createXRStore)
-      await store.enterAR();
+      // Create ImageBitmap for WebXR
+      const imageBitmap = await createImageBitmap(image);
+      
+      console.log('Entering AR with image tracking...');
+
+      // Enter AR with image tracking configuration
+      await store.enterAR({
+        optionalFeatures: ['image-tracking'],
+        trackedImages: [{
+          image: imageBitmap,
+          widthInMeters: 0.2 // 20cm wide (your painting's physical width)
+        }]
+      } as any);
 
       setInAR(true);
       console.log('AR session started with image tracking');
