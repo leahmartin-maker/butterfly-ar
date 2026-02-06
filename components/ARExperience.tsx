@@ -1,21 +1,55 @@
 'use client';
 
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
 import { XR, createXRStore } from '@react-three/xr';
 import ButterflyModel from '@/components/ButterflyModel';
-import ImageTracker from '@/components/ImageTracker';
 import { Suspense, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
 const store = createXRStore();
 
+function ImageTrackingListener({ onImageDetected }: { onImageDetected: (pos: THREE.Vector3) => void }) {
+  useEffect(() => {
+    console.log('XR session started');
+  }, []);
+
+  // Listen for XR frame updates to check for tracked images
+  useFrame((state) => {
+    const frame = (state.gl.xr as any).getFrame?.();
+    const session = state.gl.xr.getSession();
+    const referenceSpace = (state.gl.xr as any).getReferenceSpace?.();
+
+    if (!frame || !session || !referenceSpace) return;
+
+    // Check for tracked images in the frame
+    if (frame.trackedAnchors) {
+      frame.trackedAnchors.forEach((anchor: any) => {
+        if (anchor.anchorSpace) {
+          const pose = frame.getPose(anchor.anchorSpace, referenceSpace);
+          if (pose) {
+            // Extract world position from the pose
+            const position = new THREE.Vector3(
+              pose.transform.position.x,
+              pose.transform.position.y + 0.2, // Spawn 20cm above painting
+              pose.transform.position.z
+            );
+            onImageDetected(position);
+          }
+        }
+      });
+    }
+  });
+
+  return null;
+}
+
 export default function ARExperience() {
   const [inAR, setInAR] = useState(false);
   const [isSupported, setIsSupported] = useState<boolean | null>(null);
   const [supportError, setSupportError] = useState<string | null>(null);
-  const [imageDetected, setImageDetected] = useState(false);
-  const [imagePosition, setImagePosition] = useState<THREE.Vector3 | null>(null);
+  const [butterflyWorldPos, setButterflyWorldPos] = useState<THREE.Vector3 | null>(null);
+  const [hasSpawned, setHasSpawned] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -39,38 +73,50 @@ export default function ARExperience() {
       });
   }, []);
 
+  const handleEnterAR = async () => {
+    try {
+      // Load the painting image for tracking
+      const image = document.createElement('img');
+      image.src = '/images/butterfly-painting.png';
+      await image.decode();
+
+      console.log('Image loaded, entering AR with image tracking...');
+
+      // Enter AR (configuration should be done in createXRStore)
+      await store.enterAR();
+
+      setInAR(true);
+      console.log('AR session started with image tracking');
+    } catch (error) {
+      console.error('Failed to enter AR with image tracking:', error);
+      
+      // Fallback: try without image tracking
+      try {
+        await store.enterAR();
+        setInAR(true);
+        setSupportError('Image tracking not supported. AR mode active without tracking.');
+      } catch (fallbackError) {
+        console.error('Failed to enter AR at all:', fallbackError);
+        setSupportError('Failed to start AR session.');
+      }
+    }
+  };
+
+  const handleImageDetection = (worldPos: THREE.Vector3) => {
+    // Only capture position on FIRST detection
+    if (!hasSpawned) {
+      console.log('Painting detected! World position:', worldPos);
+      setButterflyWorldPos(worldPos.clone());
+      setHasSpawned(true);
+    }
+  };
+
   return (
     <div className="w-full h-screen bg-gradient-to-b from-purple-500 to-pink-500">
       {/* AR Enter Button */}
       {!inAR && (
         <button
-          onClick={async () => {
-            // Load the painting image for tracking
-            const image = document.createElement('img');
-            image.src = '/images/butterfly-painting.png';
-            
-            try {
-              await image.decode();
-              
-              // Enter AR with image tracking
-              await store.enterAR({
-                requiredFeatures: ['local-floor'],
-                optionalFeatures: ['image-tracking'],
-                trackedImages: [{
-                  image,
-                  widthInMeters: 0.3 // Adjust to your painting's actual width
-                }]
-              });
-              setInAR(true);
-            } catch (error) {
-              console.error('Failed to enter AR:', error);
-              // Fallback to regular AR without image tracking
-              await store.enterAR({
-                requiredFeatures: ['local-floor']
-              });
-              setInAR(true);
-            }
-          }}
+          onClick={handleEnterAR}
           disabled={isSupported === false}
           className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white text-purple-600 px-8 py-4 rounded-full text-xl font-bold shadow-lg hover:bg-purple-100 transition z-10 disabled:opacity-50 disabled:cursor-not-allowed"
         >
@@ -79,15 +125,21 @@ export default function ARExperience() {
       )}
 
       {supportError && !inAR && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-md text-sm z-10">
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-md text-sm z-10 max-w-xs text-center">
           {supportError}
         </div>
       )}
 
       {/* Detection status indicator */}
-      {inAR && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-md text-sm z-10">
-          {imageDetected ? '✓ Painting detected!' : '🔍 Looking for painting...'}
+      {inAR && !hasSpawned && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded-md text-sm z-10 animate-pulse">
+          🔍 Point camera at your butterfly painting...
+        </div>
+      )}
+      
+      {inAR && hasSpawned && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-green-600/90 text-white px-4 py-2 rounded-md text-sm z-10">
+          ✓ Butterfly spawned from painting!
         </div>
       )}
 
@@ -99,33 +151,23 @@ export default function ARExperience() {
             <directionalLight position={[10, 10, 5]} intensity={1.5} />
             <Environment preset="sunset" />
 
-            {/* Image tracking */}
-            <ImageTracker 
-              onImageDetected={(pos) => {
-                setImageDetected(true);
-                setImagePosition(pos);
-              }}
-              onImageLost={() => {
-                setImageDetected(false);
-              }}
-            />
+            {/* Image tracking listener (only active in AR) */}
+            {inAR && <ImageTrackingListener onImageDetected={handleImageDetection} />}
 
-            {/* Butterfly spawns from painting when detected */}
-            {imageDetected && imagePosition && (
+            {/* Butterfly pinned to world position (NOT parented to image) */}
+            {butterflyWorldPos && (
               <ButterflyModel 
                 position={[
-                  imagePosition.x,
-                  imagePosition.y + 0.2, // Spawn slightly above painting
-                  imagePosition.z
+                  butterflyWorldPos.x,
+                  butterflyWorldPos.y,
+                  butterflyWorldPos.z
                 ]} 
                 delay={0} 
               />
             )}
-            
-            {/* Fallback: spawn in front if no image detected yet */}
-            {!imageDetected && (
-              <ButterflyModel position={[0, 0, -1]} delay={0} />
-            )}
+
+            {/* Desktop preview only (not in AR) */}
+            {!inAR && <ButterflyModel position={[0, 0, -1]} delay={0} />}
 
             {/* OrbitControls for desktop testing (disabled in AR) */}
             {!inAR && <OrbitControls />}
@@ -133,9 +175,9 @@ export default function ARExperience() {
         </XR>
       </Canvas>
 
-      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 text-white text-center">
-        <p className="text-lg font-semibold">Point at your painting</p>
-        <p className="text-sm">Butterfly will come to life!</p>
+      <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 text-white text-center z-10">
+        <p className="text-lg font-semibold drop-shadow-lg">Point at your painting</p>
+        <p className="text-sm drop-shadow-lg">Butterfly will come to life!</p>
       </div>
     </div>
   );
