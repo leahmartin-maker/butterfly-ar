@@ -3,17 +3,22 @@
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Environment } from '@react-three/drei';
 import { XR, createXRStore } from '@react-three/xr';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import ButterflyModel from '@/components/ButterflyModel';
 import { Suspense, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
-const store = createXRStore();
+// Configure store with image tracking BEFORE session starts
+const store = createXRStore({
+  imageTracking: [
+    {
+      image: '/images/butterfly-painting.png',
+      width: 0.2, // 20cm wide (your painting's physical width)
+    }
+  ]
+});
 
 function ImageTrackingListener({ onImageDetected }: { onImageDetected: (pos: THREE.Vector3) => void }) {
-  useEffect(() => {
-    console.log('XR session started');
-  }, []);
-
   // Listen for XR frame updates to check for tracked images
   useFrame((state) => {
     const frame = (state.gl.xr as any).getFrame?.();
@@ -22,11 +27,15 @@ function ImageTrackingListener({ onImageDetected }: { onImageDetected: (pos: THR
 
     if (!frame || !session || !referenceSpace) return;
 
-    // Check for tracked images in the frame
-    if (frame.trackedAnchors) {
-      frame.trackedAnchors.forEach((anchor: any) => {
-        if (anchor.anchorSpace) {
-          const pose = frame.getPose(anchor.anchorSpace, referenceSpace);
+    // Use getImageTrackingResults() for image tracking (NOT trackedAnchors)
+    const imageTrackingResults = (frame as any).getImageTrackingResults?.();
+    
+    if (imageTrackingResults && imageTrackingResults.length > 0) {
+      imageTrackingResults.forEach((result: any) => {
+        // Check if the image is currently tracked
+        if (result.trackingState === 'tracked' && result.imageSpace) {
+          const pose = frame.getPose(result.imageSpace, referenceSpace);
+          
           if (pose) {
             // Extract world position from the pose
             const position = new THREE.Vector3(
@@ -34,6 +43,8 @@ function ImageTrackingListener({ onImageDetected }: { onImageDetected: (pos: THR
               pose.transform.position.y + 0.2, // Spawn 20cm above painting
               pose.transform.position.z
             );
+            
+            console.log('Image tracked at world position:', position);
             onImageDetected(position);
           }
         }
@@ -170,6 +181,15 @@ export default function ARExperience() {
             {!inAR && <ButterflyModel position={[0, 0, -1]} delay={0} />}
 
             {/* OrbitControls for desktop testing (disabled in AR) */}
+          
+          {/* Post-processing effects for glow/bloom */}
+          <EffectComposer>
+            <Bloom 
+              luminanceThreshold={1} 
+              mipmapBlur 
+              intensity={1.5}
+            />
+          </EffectComposer>
             {!inAR && <OrbitControls />}
           </Suspense>
         </XR>

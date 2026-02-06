@@ -29,6 +29,21 @@ export default function ButterflyModel({ position, delay = 0 }: ButterflyProps) 
     }
   }, [actions]);
 
+  // Add emissive glow to materials for bloom effect
+  useEffect(() => {
+    scene.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        if (mesh.material) {
+          const material = mesh.material as THREE.MeshStandardMaterial;
+          // Add warm glow to butterfly wings
+          material.emissive = new THREE.Color(0xff9966); // Orange glow
+          material.emissiveIntensity = 1.5; // Higher than 1 for bloom effect
+        }
+      }
+    });
+  }, [scene]);
+
   // Rotate butterfly slowly on Y-axis
   useFrame((state, delta) => {
     if (groupRef.current) {
